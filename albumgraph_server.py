@@ -9,11 +9,10 @@ import json
 import pickle
 import uuid
 import os
+import time
 
 import networkx as nx
 import numpy as np
-
-from datetime import datetime as dt
 
 from flask import Flask, jsonify, request
 from flask_restful import Resource, Api
@@ -37,7 +36,12 @@ def detect(img_url, detectron_url="0.0.0.0:8085/detectron"):
                object detected in that image.
     """
     res = http.request("POST", detectron_url, fields={"data": img_url})
-    cls_boxes = json.loads(res.data).get("cls_boxes")
+    if res.status == 404:
+        print("404 image not found")
+    json_boxes = json.loads(res.data)
+    if len(json_boxes) < 1:
+        return None
+    cls_boxes = json_boxes.get("cls_boxes")
     if cls_boxes is None:
         return None
     else:
@@ -94,7 +98,7 @@ def parse_region(region, img_url, label):
             "score"  : region[4],
             "img_url": img_url,
             "label"  : label,
-            "id"     : uuid.uuid4() # generate unique random key for region
+            "id"     : uuid.uuid4().hex # generate unique random key for region
            }
 
 
@@ -142,7 +146,7 @@ def load_graph(fname=FAKE_DB):
     if not os.path.exists(fname):
         return make_empty_graph()
     else:
-        return nx.load_graphml(fname)
+        return nx.read_graphml(fname)
 
 def save_graph(G):
     nx.write_graphml(G, FAKE_DB)
@@ -152,8 +156,8 @@ def add_image_vertex(G, img_url):
     """
     G.add_node(
                img_url,
-               updated_on=dt.utcnow(),
-               category="image"
+               updated_on = time.strftime("%d-%b-%Y %H:%M:%S", time.gmtime()),
+               category   = "image"
               )
 
 
@@ -163,7 +167,7 @@ def add_region_vertex(G, region):
     region_id = region["id"]
     G.add_node(
                region_id,
-               updated_on = dt.utcnow(),
+               updated_on = time.strftime("%d-%b-%Y %H:%M:%S", time.gmtime()),
                category   = "region"
                )
 
@@ -173,7 +177,7 @@ def add_label_vertex(G, label):
     """
     G.add_node(
                label,
-               updated_on = dt.utcnow(),
+               updated_on = time.strftime("%d-%b-%Y %H:%M:%S", time.gmtime()),
                category   = "label"
                )
 
@@ -186,7 +190,7 @@ def add_image_region_edge(G, region):
     G.add_edge(
                img_url,
                region_id,
-               updated_on = dt.utcnow(),
+               updated_on = time.strftime("%d-%b-%Y %H:%M:%S", time.gmtime()),
                category   = "image-to-region"
                )
 
@@ -199,7 +203,7 @@ def add_region_label_edge(G, region):
     G.add_edge(
                region_id,
                label,
-               updated_on = dt.utcnow(),
+               updated_on = time.strftime("%d-%b-%Y %H:%M:%S", time.gmtime()),
                category   = "region-to-label"
                )
 
@@ -207,32 +211,45 @@ def update_graph_new_image(G, img_url, idx2label):
     cls_boxes = detect(img_url)
     if cls_boxes is None:
         print("Got nothing back from detectron")
+        print(img_url)
         return None
     # Add the image vertex.
-    add_image_vertex(G, img_url)
+    if img_url not in G.nodes:
+        add_image_vertex(G, img_url)
+    else:
+        print("We already have this URL in the album")
+        return None
 
     regions = parse_cls_boxes(img_url, cls_boxes, idx2label)
     if len(regions) < 1:
         print("None of the regions were worth a damn")
+        print(img_url)
         return None
 
     # iterate through the regions we've detected.
     for region in regions:
-        # Get the label from the CV output.
+        # Get the region_id and label for this region.
         label = region['label']
+        region_id = region["id"]
 
         # Add the region vertex.
-        add_region_vertex(G, region)
+        if region_id not in G.nodes:
+            add_region_vertex(G, region)
+        else:
+            print("This region vertex already exists. Huh. Weird")
+            continue
 
         # Add the label vertex.
         if label not in G.nodes:
             add_label_vertex(G, label)
 
         # Add the image-region edge.
-        add_image_region_edge(G, region)
+        if (img_url, region_id) not in G.edges:
+            add_image_region_edge(G, region)
 
         # Add the region-label edge.
-        add_region_label_edge(G, region)
+        if (region_id, label) not in G.edges:
+            add_region_label_edge(G, region)
 
 
 app = Flask(__name__)
