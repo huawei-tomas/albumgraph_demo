@@ -84,3 +84,11 @@ def parse_region(region, img_url, label):
             "label"  : label
            }
 
+
+########################################################
+#                                                      #
+#   THE FOLLOWING IS NOT THE RIGHT WAY TO DO IT.       #
+#   I'M JUST ESTABLISHING THE STRUCTURE OF THE GRAPH.  #
+#                                                      #
+########################################################
+
