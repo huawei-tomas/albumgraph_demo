@@ -7,11 +7,19 @@ import urllib3
 import certifi
 import json
 import pickle
+import uuid
+import os
+
 import networkx as nx
 import numpy as np
 
-http = urllib3.PoolManager(cert_reqs="CERT_REQUIRED", ca_certs=certifi.where())
+from datetime import datetime as dt
 
+from flask import Flask, jsonify, request
+from flask_restful import Resource, Api
+
+http = urllib3.PoolManager(cert_reqs="CERT_REQUIRED", ca_certs=certifi.where())
+FAKE_DB = "./data/albumgraph_db.graphml"
 
 def detect(img_url, detectron_url="0.0.0.0:8085/detectron"):
     """
@@ -29,7 +37,11 @@ def detect(img_url, detectron_url="0.0.0.0:8085/detectron"):
                object detected in that image.
     """
     res = http.request("POST", detectron_url, fields={"data": img_url})
-    return pickle.loads(json.loads(res.data).get("cls_boxes"))[1:]
+    cls_boxes = json.loads(res.data).get("cls_boxes")
+    if cls_boxes is None:
+        return None
+    else:
+        return pickle.loads(cls_boxes)[1:]
 
 
 def load_idx2label(fname="./idx_to_label.json"):
@@ -81,7 +93,8 @@ def parse_region(region, img_url, label):
             "y_min"  : rounder(region[3]),
             "score"  : region[4],
             "img_url": img_url,
-            "label"  : label
+            "label"  : label,
+            "id"     : uuid.uuid4() # generate unique random key for region
            }
 
 
@@ -92,3 +105,157 @@ def parse_region(region, img_url, label):
 #                                                      #
 ########################################################
 
+
+#######################################################
+"""
+album_graph - images, regions, labels
+image key is img_url
+region key is some shit I'm going to make up, uuid prob
+label key is the label. Only 80 of these, but we're adding
+them on the fly people. Look alive.
+
+we're going to make edges between the images and the
+regions they contain
+
+we're going to make edges between the labels and the
+regions they represent
+
+That's it. Make it functional. Make it to where it will work
+through a flask API.
+
+make_empty_graph or load_graphml depending on configs
+
+add_image(img_url) - adds an image node using the url as it's key.
+
+add_region(img_url, region) - adds a region node using a uuid as identifier.
+
+add_label(img_url, region, label) - add a label node using label class as id.
+
+"""
+#######################################################
+
+
+def make_empty_graph():
+    return nx.Graph()
+
+def load_graph(fname=FAKE_DB):
+    if not os.path.exists(fname):
+        return make_empty_graph()
+    else:
+        return nx.load_graphml(fname)
+
+def save_graph(G):
+    nx.write_graphml(G, FAKE_DB)
+
+def add_image_vertex(G, img_url):
+    """
+    """
+    G.add_node(
+               img_url,
+               updated_on=dt.utcnow(),
+               category="image"
+              )
+
+
+def add_region_vertex(G, region):
+    """
+    """
+    region_id = region["id"]
+    G.add_node(
+               region_id,
+               updated_on = dt.utcnow(),
+               category   = "region"
+               )
+
+
+def add_label_vertex(G, label):
+    """
+    """
+    G.add_node(
+               label,
+               updated_on = dt.utcnow(),
+               category   = "label"
+               )
+
+
+def add_image_region_edge(G, region):
+    """
+    """
+    img_url = region["img_url"]
+    region_id = region["id"]
+    G.add_edge(
+               img_url,
+               region_id,
+               updated_on = dt.utcnow(),
+               category   = "image-to-region"
+               )
+
+
+def add_region_label_edge(G, region):
+    """
+    """
+    region_id = region["id"]
+    label = region["label"]
+    G.add_edge(
+               region_id,
+               label,
+               updated_on = dt.utcnow(),
+               category   = "region-to-label"
+               )
+
+def update_graph_new_image(G, img_url, idx2label):
+    cls_boxes = detect(img_url)
+    if cls_boxes is None:
+        print("Got nothing back from detectron")
+        return None
+    # Add the image vertex.
+    add_image_vertex(G, img_url)
+
+    regions = parse_cls_boxes(img_url, cls_boxes, idx2label)
+    if len(regions) < 1:
+        print("None of the regions were worth a damn")
+        return None
+
+    # iterate through the regions we've detected.
+    for region in regions:
+        # Get the label from the CV output.
+        label = region['label']
+
+        # Add the region vertex.
+        add_region_vertex(G, region)
+
+        # Add the label vertex.
+        if label not in G.nodes:
+            add_label_vertex(G, label)
+
+        # Add the image-region edge.
+        add_image_region_edge(G, region)
+
+        # Add the region-label edge.
+        add_region_label_edge(G, region)
+
+
+app = Flask(__name__)
+api = Api(app)
+
+G = load_graph()
+idx2label = load_idx2label()
+
+class UpdateAlbumGraph(Resource):
+    def post(self):
+        img_url = request.form["data"]
+        update_graph_new_image(G, img_url, idx2label)
+    def get(self):
+        return {"graph":pickle.dumps(G)}
+
+class SaveAlbumGraph(Resource):
+    def post(self):
+        save_graph(G)
+    def get(self):
+        return {"graph": pickle.dumps(G)}
+
+api.add_resource(UpdateAlbumGraph, "/update_albumgraph")
+api.add_resource(SaveAlbumGraph, "/save_albumgraph")
+
+if __name__ == "__main__":
+    app.run(use_reloader=False, debug=True, host="0.0.0.0", port=5923)
