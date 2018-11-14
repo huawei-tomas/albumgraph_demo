@@ -50,6 +50,13 @@ def detect(img_url, detectron_url="0.0.0.0:8085/detectron"):
 
 def load_idx2label(fname="./idx_to_label.json"):
     """
+    Function:
+               load_idx2label( fname )
+    Arguments:
+               fname - name/path of the idx_to_label json file.
+    Returns:
+               A dictionary of indexes as keys and the values as the labels
+               that come back from detectron.
     """
     with open(fname, 'r') as f:
         d = json.load(f)
@@ -59,14 +66,17 @@ def load_idx2label(fname="./idx_to_label.json"):
 
 def parse_cls_boxes(img_url, cls_boxes, idx2label, score_threshold=0.75):
     """
+    Function:
+               parse_cls_boxes( img_url, cls_boxes, idx2label, score_threshold )
+    Arguments:
+               img_url         - an image url
+               cls_boxes       - the bounding boxes returned from detectron
+               idx2label       - mapping from idx of cls_boxes to object label
+               score_threshold - minimum score for object detection.
+    Returns:
+               List of regions containing x/y_max & min, labels, img_url, and
+               score.
     """
-    # Okay. What do we want to do?
-    # We want to transform our numeric description into a list of objects
-    # that have pertinent information about the region, basically the region
-    # nodes in the graph, along with the labels, which we get from the
-    # idx2label mapping.
-
-    # Make sure our mapping and cls_boxes have the same size
     assert len(idx2label) == len(cls_boxes)
 
     regions = []
@@ -86,10 +96,29 @@ def parse_cls_boxes(img_url, cls_boxes, idx2label, score_threshold=0.75):
 
 
 def rounder(x):
+    """
+    Function:
+               rounder( x )
+    Arguments:
+               x - a floating point number
+    Returns:
+               An integer rounded from the floating point number
+    """
     return int(np.round(x))
 
 
 def parse_region(region, img_url, label):
+    """
+    Function:
+               parse_region( region, img_url, label )
+    Arguments:
+               region  - a row containing x/y_max and min and score
+               img_url - an image url
+               label   - the label assigned to this region
+    Returns:
+               a dictionary containing the data inside the region array in
+               addition to score, label, img_url, and a randomly generated id
+    """
     return {
             "x_max"  : rounder(region[0]),
             "x_min"  : rounder(region[1]),
@@ -102,57 +131,51 @@ def parse_region(region, img_url, label):
            }
 
 
-########################################################
-#                                                      #
-#   THE FOLLOWING IS NOT THE RIGHT WAY TO DO IT.       #
-#   I'M JUST ESTABLISHING THE STRUCTURE OF THE GRAPH.  #
-#                                                      #
-########################################################
-
-
-#######################################################
-"""
-album_graph - images, regions, labels
-image key is img_url
-region key is some shit I'm going to make up, uuid prob
-label key is the label. Only 80 of these, but we're adding
-them on the fly people. Look alive.
-
-we're going to make edges between the images and the
-regions they contain
-
-we're going to make edges between the labels and the
-regions they represent
-
-That's it. Make it functional. Make it to where it will work
-through a flask API.
-
-make_empty_graph or load_graphml depending on configs
-
-add_image(img_url) - adds an image node using the url as it's key.
-
-add_region(img_url, region) - adds a region node using a uuid as identifier.
-
-add_label(img_url, region, label) - add a label node using label class as id.
-
-"""
-#######################################################
-
-
 def make_empty_graph():
+    """
+    Function:
+               make_empty_graph()
+    Arguments:
+               None
+    Returns:
+               An empty NetworkX undirected graph
+    """
     return nx.Graph()
 
 def load_graph(fname=FAKE_DB):
+    """
+    Function:
+               load_graph( fname )
+    Arguments:
+               fname - name/path of the graphml file where we save the graph.
+    Returns:
+               None
+    """
     if not os.path.exists(fname):
         return make_empty_graph()
     else:
         return nx.read_graphml(fname)
 
 def save_graph(G):
+    """
+    Function:
+               save_graph( G )
+    Arguments:
+               G - a NetworkX graph
+    Returns:
+               None
+    """
     nx.write_graphml(G, FAKE_DB)
 
 def add_image_vertex(G, img_url):
     """
+    Function:
+               add_image_vertex( G, img_url )
+    Arguments:
+               G       - a NetworkX graph
+               img_url - an image url
+    Returns:
+               None
     """
     G.add_node(
                img_url,
@@ -163,6 +186,13 @@ def add_image_vertex(G, img_url):
 
 def add_region_vertex(G, region):
     """
+    Function:
+               add_region_vertex( G, img_url )
+    Arguments:
+               G       - a NetworkX graph
+               region - a region where an object was detected
+    Returns:
+               None
     """
     region_id = region["id"]
     G.add_node(
@@ -174,6 +204,13 @@ def add_region_vertex(G, region):
 
 def add_label_vertex(G, label):
     """
+    Function:
+               add_label_vertex( G, img_url )
+    Arguments:
+               G       - a NetworkX graph
+               region - a region where an object was detected
+    Returns:
+               None
     """
     G.add_node(
                label,
@@ -184,6 +221,13 @@ def add_label_vertex(G, label):
 
 def add_image_region_edge(G, region):
     """
+    Function:
+               add_image_region_edge( G, img_url )
+    Arguments:
+               G       - a NetworkX graph
+               region - a region where an object was detected
+    Returns:
+               None
     """
     img_url = region["img_url"]
     region_id = region["id"]
@@ -197,6 +241,13 @@ def add_image_region_edge(G, region):
 
 def add_region_label_edge(G, region):
     """
+    Function:
+               add_region_label_edge( G, img_url )
+    Arguments:
+               G       - a NetworkX graph
+               region - a region where an object was detected
+    Returns:
+               None
     """
     region_id = region["id"]
     label = region["label"]
@@ -208,6 +259,16 @@ def add_region_label_edge(G, region):
                )
 
 def update_graph_new_image(G, img_url, idx2label):
+    """
+    Function:
+               update_graph_new_image( G, img_url, idx2label )
+    Arguments:
+               G         - a NetworkX graph
+               img_url   - an image url
+               idx2label - mapping from detectron index to object label
+    Returns:
+               None
+    """
     cls_boxes = detect(img_url)
     if cls_boxes is None:
         print("Got nothing back from detectron")
@@ -259,6 +320,12 @@ G = load_graph()
 idx2label = load_idx2label()
 
 class UpdateAlbumGraph(Resource):
+    """
+    Class:
+                 UpdateAlbumGraph( Resource )
+    Description:
+                 Flask-RESTful resource for adding images to the AlbumGraph
+    """
     def post(self):
         img_url = request.form["data"]
         update_graph_new_image(G, img_url, idx2label)
@@ -266,6 +333,12 @@ class UpdateAlbumGraph(Resource):
         return {"graph":pickle.dumps(G)}
 
 class SaveAlbumGraph(Resource):
+    """
+    Class:
+                 SaveAlbumGraph( Resource )
+    Description:
+                 Flask-RESTful resource for persisting changes to the AlbumGraph
+    """
     def post(self):
         save_graph(G)
     def get(self):
