@@ -9,6 +9,8 @@ import json
 import pickle
 import time
 import numpy as np
+import networkx as nx
+import matplotlib.pyplot as plt
 
 np.random.seed(273611)
 
@@ -36,10 +38,11 @@ def save_albumgraph():
 def get_albumgraph():
     r = http.request("GET", save_url)
     if r.status == 200:
-        return pickle.loads(json.loads(r.data)["graph"])
+        return json.loads(json.loads(r.data)["graph"])
     else:
         print("Something went wrong.")
         return None
+
 
 def process_album(album_urls):
     for img_url in album_urls:
@@ -53,12 +56,14 @@ def generate_fake_album(n_samples=100, max_id=10000):
     return [vg_base_url + "{}.jpg".format(x) for x in album_ids]
 
 def main():
-    album_urls = generate_fake_album()
+    album_urls = generate_fake_album(n_samples=100, max_id=10000)
     process_album(album_urls)
     save_albumgraph()
     G = get_albumgraph()
-    print(len(G.nodes))
-
+    print(G)
+    #print(len(G.nodes))
+    #nx.draw_circular(G)
+    #plt.show()
 
 if __name__ == "__main__":
     main()

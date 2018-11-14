@@ -263,13 +263,13 @@ class UpdateAlbumGraph(Resource):
         img_url = request.form["data"]
         update_graph_new_image(G, img_url, idx2label)
     def get(self):
-        return {"graph":pickle.dumps(G)}
+        return {"graph":nx.jit_data(G)}
 
 class SaveAlbumGraph(Resource):
     def post(self):
         save_graph(G)
     def get(self):
-        return {"graph": pickle.dumps(G)}
+        return {"graph": nx.jit_data(G)}
 
 api.add_resource(UpdateAlbumGraph, "/update_albumgraph")
 api.add_resource(SaveAlbumGraph, "/save_albumgraph")
